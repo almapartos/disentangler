@@ -163,12 +163,12 @@ def simulation_random_greedy_v2(N, tmax):  # tmax no. "steps" of Clifford ops in
     while not entangled:
         qc = qiskit.QuantumCircuit(N)
         rc_copy = qiskit.QuantumCircuit(N)
-        for i in range(10):  # settings for number of t-gates and length of random clifford circuit
+        for i in range(5):  # settings for number of t-gates and length of random clifford circuit
             random_circuit = random_clifford_circuit(N, 5, max_operands=2)
             qc.compose(random_circuit, inplace=True)
             rc_copy.compose(random_circuit, inplace=True)
             which_t = rnd.randint(0, N - 1)
-            qc.barrier(), qc.t(which_t), qc.barrier()
+            #qc.barrier(), qc.t(which_t), qc.barrier()
         psi = psi0.evolve(qc)
         EE_init, SRE_init = calculate_EE_gen(psi.data)
         #SRE_init = stabiliser_Renyi_entropy_pure(psi, 2, N)
@@ -180,7 +180,7 @@ def simulation_random_greedy_v2(N, tmax):  # tmax no. "steps" of Clifford ops in
     EE_rev, SRE_rev = calculate_EE_gen(psi_rev.data)
     print("nqubits: ", N, ", Entanglement entropy after reversal: ", EE_rev, ", SRE: ", SRE_rev)
 
-    psis, min_circuit = find_best_circuit_old(psi, N, tmax)
+    psis, min_circuit = find_best_circuit(psi, N, tmax)
     t_range = []
     t = 0
     EE = []
@@ -224,6 +224,7 @@ def find_best_circuit(psi, N, tmax=5):
     no_change = False
     while EE > 1e-1 and nsweeps < maxsweeps and not no_change:
         rev = bool(nsweeps % 2)  # false (normal) for odd sweep (first, third, etc)
+        has_changed = False
         for n in range(0, N - 1):
             print(f"trial: {ntrials}")
 
@@ -276,7 +277,6 @@ def find_best_circuit(psi, N, tmax=5):
 
             minimizing_circuit = gate_seq_from_row(["I", "I"], q0, q1, N)
             EE_1qb = calculate_EE_sweep(psi, q0, rev)
-            has_changed = False
             for c_idx, circuit in enumerate(all_circuits):
                 #print(circuit)
                 #circuit.inverse()
@@ -287,15 +287,16 @@ def find_best_circuit(psi, N, tmax=5):
                     EE_1qb = EE_trial
                     minimizing_circuit = circuit
                     has_changed = True
-            if not has_changed:
-                no_change_count += 1
-                if no_change_count > 1:  # terminate if back + forth sweep haven't produced any change
-                    no_change = True
             min_qc.compose(minimizing_circuit, inplace=True)
             psi = psi.evolve(minimizing_circuit)
             EE, sre = calculate_EE_gen(psi.data)
             psis.append(psi)
             ntrials += 1
+        if not has_changed:
+            print("hasn't changed")
+            no_change_count += 1
+            if no_change_count > 1:  # terminate if back + forth sweep haven't produced any change
+                no_change = True
         nsweeps += 1
     return psis, min_qc
 
@@ -330,6 +331,7 @@ def find_best_circuit_old(psi, N, tmax=5):  # old version with order of operatio
     no_change = False
     while EE > 1e-1 and nsweeps < maxsweeps and not no_change:
         rev = bool(nsweeps % 2)  # false (normal) for odd sweep (first, third, etc)
+        has_changed = False
         for n in range(0, N - 1):
             print(f"trial: {ntrials}")
 
@@ -395,7 +397,6 @@ def find_best_circuit_old(psi, N, tmax=5):  # old version with order of operatio
 
             minimizing_circuit = gate_seq_from_row(["I", "I"], q0, q1, N)
             EE_1qb = calculate_EE_sweep(psi, q0, rev)
-            has_changed = False
             for c_idx, circuit in enumerate(all_circuits):
                 #print(circuit)
                 psi_trial = psi.evolve(circuit)
@@ -405,15 +406,15 @@ def find_best_circuit_old(psi, N, tmax=5):  # old version with order of operatio
                     EE_1qb = EE_trial
                     minimizing_circuit = circuit
                     has_changed = True
-            if not has_changed:
-                no_change_count += 1
-                if no_change_count > 1:  # terminate if back + forth sweep haven't produced any change
-                    no_change = True
             min_qc.compose(minimizing_circuit, inplace=True)
             psi = psi.evolve(minimizing_circuit)
             EE, sre = calculate_EE_gen(psi.data)
             psis.append(psi)
             ntrials += 1
+        if not has_changed:
+            no_change_count += 1
+            if no_change_count > 1:  # terminate if back + forth sweep haven't produced any change
+                no_change = True
         nsweeps += 1
     return psis, min_qc
 
