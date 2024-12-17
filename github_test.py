@@ -35,13 +35,15 @@ plt.rc('text.latex', preamble=r'\usepackage{amsmath}'
                              r'\usepackage[braket]{qcircuit}')
 
 def disentangle_greedy_search():
-    fig = plt.figure(figsize=(6.4, 4.8))
-    gs = gridspec.GridSpec(nrows=1, ncols=1)
-    ax0 = fig.add_subplot(gs[0, 0])
+    fig = plt.figure(figsize=(6.4*2, 4.8))
+    gs = gridspec.GridSpec(nrows=2, ncols=2)
+    ax0 = fig.add_subplot(gs[0:2, 0])
+    ax1 = fig.add_subplot(gs[0, 1])
+    ax2 = fig.add_subplot(gs[1, 1])
 
     Ns = [2, 3, 4, 5, 6]  # fine up to 7 qubits, too slow otherwise
     viridis = plt.cm.viridis
-    colors = viridis(np.linspace(0.1, 0.9, 6))
+    colors = viridis(np.linspace(0.1, 0.9, len(Ns)))
     discrete_cmap = mcolors.ListedColormap(colors, name='viridis_discrete')
     colors = list(discrete_cmap.colors)
     tmax = 10  # doesn't really matter
@@ -49,14 +51,23 @@ def disentangle_greedy_search():
 
     for i, N in enumerate(Ns):
         for j in range(runs):
-            EE, t = simulation_random_greedy_v2(N, tmax)
+            EE, t, magic, ee_ent = simulation_random_greedy_v2(N, tmax)
+            steps_magic = [i for i in range(len(list(magic)))]
             if j == 0:
-                ax0.plot(t / N, EE, marker=".", label=f"$N=$ {{{N}}}", color=colors[i], linewidth=0.75)
+                ax0.plot(t / N, EE, marker=".", label=f"$N=$ {{{N}}}", color=colors[i], linewidth=0.75, alpha=0.75)
+                ax1.plot(steps_magic, magic, marker="*", label=f"$N=$ {{{N}}}", color=colors[i], linewidth=0.75, alpha=0.75)
+                ax2.plot(steps_magic, ee_ent, marker=".", label=f"$N=$ {{{N}}}", color=colors[i], linewidth=0.75, alpha=0.75)
             else:
-                ax0.plot(t / N, EE, marker=".", color=colors[i], linewidth=0.75)
+                ax0.plot(t / N, EE, marker=".", color=colors[i], linewidth=0.75, alpha=0.75)
+                ax1.plot(steps_magic, magic, marker="*", color=colors[i], linewidth=0.75, alpha=0.75)
+                ax2.plot(steps_magic, ee_ent, marker=".", color=colors[i], linewidth=0.75, alpha=0.75)
 
     ax0.set_xlabel(r"$t/N$"), ax0.set_ylabel(r"$\mathcal{E}(\ket{\psi})$"), ax0.legend()
     ax0.set_title(r"Clifford + T, sum($\{S \}_{\text{cuts}}$) check")
+    ax1.set_xlabel(r"''$t$''"), ax1.set_ylabel(r"$\mathcal{M}(\ket{\psi})$"), ax1.legend()
+    ax1.set_title(r"SRE during entangling phase")
+    ax2.set_xlabel(r"''$t$''"), ax2.set_ylabel(r"$\mathcal{E}(\ket{\psi})$"), ax1.legend()
+    ax2.set_title(r"EE during entangling phase")
 
     fig.savefig("disentangle_greedy.pdf", bbox_inches="tight")
 
@@ -161,26 +172,40 @@ def simulation_random_greedy_v2(N, tmax):  # tmax no. "steps" of Clifford ops in
     psi0 = Statevector.from_label("0" * N)  # is a stabilizer state
     entangled = False
     while not entangled:
+        magic = [0]
+        ee_entangling = [0]
         qc = qiskit.QuantumCircuit(N)
         rc_copy = qiskit.QuantumCircuit(N)
-        for i in range(5):  # settings for number of t-gates and length of random clifford circuit
-            random_circuit = random_clifford_circuit(N, 5, max_operands=2)
+        psi0_test = Statevector.from_label("0" * N)
+        for i in range(N-1):  # settings for number of t-gates and length of random clifford circuit
+            random_circuit = random_clifford_circuit(N, N+1, max_operands=2)
             qc.compose(random_circuit, inplace=True)
             rc_copy.compose(random_circuit, inplace=True)
             which_t = rnd.randint(0, N - 1)
-            #qc.barrier(), qc.t(which_t), qc.barrier()
+            qc.barrier(), qc.t(which_t), qc.barrier()
+
+            # just for checking the evolution during entanglemment phase
+            t_circuit = qiskit.QuantumCircuit(N)
+            t_circuit.compose(random_circuit, inplace=True)
+            t_circuit.t(which_t)
+            psi0_test = psi0_test.evolve(t_circuit)
+            ee, sre = calculate_EE_gen(psi0_test.data)
+            magic.append(sre)
+            ee_entangling.append(ee)
         psi = psi0.evolve(qc)
         EE_init, SRE_init = calculate_EE_gen(psi.data)
         #SRE_init = stabiliser_Renyi_entropy_pure(psi, 2, N)
         if EE_init > 0.5:  # arbitrary value
             entangled = True
+            print(f"EE_init = {EE_init}")
 
+    #qc.draw(output="mpl", style="iqp")
     qc_rev = rc_copy.inverse()
     psi_rev = psi.evolve(qc_rev)
     EE_rev, SRE_rev = calculate_EE_gen(psi_rev.data)
     print("nqubits: ", N, ", Entanglement entropy after reversal: ", EE_rev, ", SRE: ", SRE_rev)
 
-    psis, min_circuit = find_best_circuit(psi, N, tmax)
+    psis, min_circuit = find_best_circuit_old(psi, N, tmax)
     t_range = []
     t = 0
     EE = []
@@ -189,11 +214,12 @@ def simulation_random_greedy_v2(N, tmax):  # tmax no. "steps" of Clifford ops in
         t_range.append(t), EE.append(_EE)
         t += 1
 
-    return np.array(EE), np.array(t_range)
+    return np.array(EE), np.array(t_range), np.array(magic), np.array(ee_entangling)
+
 
 def find_best_circuit(psi, N, tmax=5):
     h = ["I", "H"]
-    v = ["I", "HS", "HSHS"]  # also called V and W, axis swap group; x-y-z -> y-z-x -> z-x-y
+    v = ["I", "HS", "V"]  # also called V and W, axis swap group; x-y-z -> y-z-x -> z-x-y
     p = ["I", "X", "Y", "Z"]
 
 
@@ -302,7 +328,7 @@ def find_best_circuit(psi, N, tmax=5):
 
 def find_best_circuit_old(psi, N, tmax=5):  # old version with order of operations inverted. works better at disentangling somehow but seems wrong?
     h = ["I", "H"]
-    v = ["I", "HS", "HSHS"]
+    v = ["I", "HS", "V"]
     p = ["I", "X", "Y", "Z"]
 
     psis = [psi]
@@ -440,6 +466,9 @@ def gate_from_str(str, q, N):
             qc.y(q)
         elif gate == "Z":
             qc.z(q)
+        elif gate == "V":
+            qc.h(q)
+            qc.sdg(q)
     return qc
 
 def calculate_EE_gen(psi):  # Note: take psi.data as input
