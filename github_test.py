@@ -250,7 +250,7 @@ def find_best_circuit(psi, N, tmax=5):
         for n in range(0, N - 1):
             print(f"trial: {ntrials}")
 
-            all_circuits = []  # should be 20
+            all_circuits = []  # should be 19
 
             if not rev:  # not reversed; normal order
                 q0 = n
@@ -296,6 +296,8 @@ def find_best_circuit(psi, N, tmax=5):
             qc_c4.cx(q1, q0)
             qc_c4.cx(q0, q1)
             all_circuits.append(qc_c4)
+
+            print(len(all_circuits))
 
             minimizing_circuit = gate_seq_from_row(["I", "I"], q0, q1, N)
             EE_1qb = calculate_EE_sweep(psi, q0, rev)
@@ -357,7 +359,7 @@ def find_best_circuit_old(psi, N, tmax=5):  # old version with order of operatio
         for n in range(0, N - 1):
             print(f"trial: {ntrials}")
 
-            all_circuits = []  # should be 20
+            all_circuits = []  # should be 19
 
             if not rev:  # not reversed; normal order
                 q0 = n
@@ -367,7 +369,7 @@ def find_best_circuit_old(psi, N, tmax=5):  # old version with order of operatio
                 q1 = (N - 1) - n - 1
 
             ## Class 1 ##
-            qc_c1 = QuantumCircuit(N)
+            #qc_c1 = QuantumCircuit(N)
             #all_circuits.append(qc_c1)  #unnecessary
 
             ## Class 2 - CNOT ##
@@ -437,6 +439,7 @@ def gate_seq_from_row(row, q0, q1, N):
 def gate_from_str(str, q, N):
     qc = QuantumCircuit(N)
     single_gates = list(str)
+    single_gates.reverse()
     for gate in single_gates:
         if gate == "H":
             qc.h(q)
